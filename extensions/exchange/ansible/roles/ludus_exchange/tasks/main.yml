@@ -1,0 +1,112 @@
+---
+- name: Ensure PowerShell modules path exists for offline mode
+  win_file:
+    path: C:\PowerShellModules
+    state: directory
+  when: offline_mode | default(false)
+
+- name: Copy cached PowerShell modules for offline mode
+  win_copy:
+    src: "{{ playbook_dir }}/../cache/powershell-modules/"
+    dest: C:\PowerShellModules\
+  when: offline_mode | default(false)
+
+- name: Install PowerShell modules from cache
+  win_shell: |
+    Set-Location C:\PowerShellModules
+    .\Install-CachedModules.ps1
+  when: offline_mode | default(false)
+
+- name: Check if Exchange installation files exist in cache
+  win_stat:
+    path: "{{ item }}"
+  register: exchange_files
+  with_items:
+    - "C:\\Windows\\Temp\\ExchangeServer.iso"
+    - "C:\\Windows\\Temp\\prerequisites"
+  when: offline_mode | default(false)
+
+- name: Ensure Exchange prerequisites directory exists
+  win_file:
+    path: C:\Windows\Temp\prerequisites
+    state: directory
+
+- name: Copy Exchange installation files from cache when offline
+  win_copy:
+    src: "{{ playbook_dir }}/../cache/exchange/{{ item }}"
+    dest: "C:\\Windows\\Temp\\{{ item }}"
+  with_items:
+    - "ExchangeServer.iso"
+    - "prerequisites/"
+  when: offline_mode | default(false)
+
+- name: Install Exchange prerequisites from cache
+  win_shell: |
+    Set-Location C:\Windows\Temp\prerequisites
+    foreach ($file in (Get-ChildItem -Filter "*.msi")) {
+      Start-Process msiexec -ArgumentList "/i $($file.FullName) /qn /norestart" -Wait
+    }
+  when: offline_mode | default(false)
+
+- name: Check if Exchange is installed
+  win_service:
+    name: "MSExchangeFrontendTransport"
+  register: exchange_installed
+
+- name: Create Exchange installation directory
+  win_file:
+    path: "{{wazuh_install_location}}"
+    state: directory
+
+- name: Copy Exchange installation files
+  win_copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+    - { src: "{{ playbook_dir }}/../cache/installers/UcmaRuntimeSetup.exe", dest: "C:\\Windows\\Temp\\UcmaRuntimeSetup.exe" }
+    - { src: "{{ playbook_dir }}/../cache/installers/ExchangeServer2019-x64-CU9.ISO", dest: "C:\\Windows\\Temp\\ExchangeServer2019-x64-CU9.ISO" }
+    - { src: "{{ playbook_dir }}/../cache/installers/rewrite_amd64_en-US.msi", dest: "C:\\Windows\\Temp\\rewrite_amd64_en-US.msi" }
+  when: not exchange_installed.exists
+
+- name: Install URL Rewrite Module
+  win_package:
+    path: "C:\\Windows\\Temp\\rewrite_amd64_en-US.msi"
+    state: present
+  when: not exchange_installed.exists
+
+- name: Install UCMA Runtime
+  win_package:
+    path: "C:\\Windows\\Temp\\UcmaRuntimeSetup.exe"
+    state: present
+    arguments: /q
+  when: not exchange_installed.exists
+
+- name: Download Exchange ISO for Windows Server 2016
+  ansible.builtin.include_tasks: ludus-download-exchange-2016.yml
+  when: ludus_os_version == "2016" and not exchange_installed.exists
+
+- name: Download Exchange ISO for Windows Server 2019
+  ansible.builtin.include_tasks: ludus-download-exchange-2019.yml
+  when: ludus_os_version in ["2019", "2022"] and not exchange_installed.exists
+
+- name: Ludus Exchange Server features to be installed
+  ansible.builtin.include_tasks: ludus-exchange-pre.yml
+  when: not exchange_installed.exists
+
+- name: Install Exchange Server for Windows Server 2016
+  ansible.builtin.include_tasks: ludus-exchange-2016-install.yml
+  when: ludus_os_version == "2016" and not exchange_installed.exists
+
+- name: Install Exchange Server for Windows Server 2019
+  ansible.builtin.include_tasks: ludus-exchange-2019-install.yml
+  when: ludus_os_version in ["2019", "2022"] and not exchange_installed.exists
+
+- name: Create ad users mailbox
+  ansible.builtin.include_tasks: ludus-create-mailbox.yml
+
+- name: Setup internal dns adapter
+  ansible.builtin.include_tasks: ludus-exchange-dns.yml
+
+#- name: Run the send connector task
+#  ansible.builtin.include_tasks: ludus_sendconnector.yml
+#  when: exchange_installed.exists or send_connector_name is defined

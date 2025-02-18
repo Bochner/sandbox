@@ -1,0 +1,61 @@
+---
+- name: Ensure ELK prerequisite directories exist
+  win_file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - C:\Windows\Temp\elk
+    - C:\Program Files\Elastic\Beats\filebeat
+    - C:\Program Files\Elastic\Beats\winlogbeat
+
+- name: Copy ELK Windows agents from cache when offline
+  win_copy:
+    src: "{{ playbook_dir }}/../cache/elk/windows-agent/{{ item.src }}"
+    dest: "C:\\Windows\\Temp\\elk\\{{ item.src }}"
+  with_items:
+    - { src: "winlogbeat-8.11.1-windows-x86_64.zip" }
+    - { src: "filebeat-8.11.1-windows-x86_64.zip" }
+  when: offline_mode | default(false)
+
+- name: Extract Winlogbeat from cache
+  win_unzip:
+    src: C:\Windows\Temp\elk\winlogbeat-8.11.1-windows-x86_64.zip
+    dest: C:\Program Files\Elastic\Beats\winlogbeat
+    delete_archive: yes
+  when: offline_mode | default(false)
+
+- name: Extract Filebeat from cache
+  win_unzip:
+    src: C:\Windows\Temp\elk\filebeat-8.11.1-windows-x86_64.zip
+    dest: C:\Program Files\Elastic\Beats\filebeat
+    delete_archive: yes
+  when: offline_mode | default(false)
+
+- name: Configure Winlogbeat
+  win_template:
+    src: winlogbeat.yml.j2
+    dest: C:\Program Files\Elastic\Beats\winlogbeat\winlogbeat.yml
+
+- name: Configure Filebeat
+  win_template:
+    src: filebeat.yml.j2
+    dest: C:\Program Files\Elastic\Beats\filebeat\filebeat.yml
+
+- name: Install Winlogbeat service
+  win_shell: |
+    Set-Location 'C:\Program Files\Elastic\Beats\winlogbeat'
+    .\install-service-winlogbeat.ps1
+
+- name: Install Filebeat service
+  win_shell: |
+    Set-Location 'C:\Program Files\Elastic\Beats\filebeat'
+    .\install-service-filebeat.ps1
+
+- name: Start ELK agent services
+  win_service:
+    name: "{{ item }}"
+    state: started
+    start_mode: auto
+  with_items:
+    - winlogbeat
+    - filebeat

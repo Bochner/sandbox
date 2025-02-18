@@ -1,0 +1,38 @@
+---
+- name: Ensure ELK prerequisite directories exist
+  win_file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - C:\Windows\Temp\elk
+    - C:\Windows\Temp\elk\winlogbeat
+
+- name: Copy Winlogbeat from cache when offline
+  win_copy:
+    src: "{{ playbook_dir }}/../cache/elk/winlogbeat.zip"
+    dest: C:\Windows\Temp\elk\winlogbeat.zip
+  when: offline_mode | default(false)
+
+- name: Extract Winlogbeat
+  win_unzip:
+    src: C:\Windows\Temp\elk\winlogbeat.zip
+    dest: C:\Windows\Temp\elk\winlogbeat
+    delete_archive: yes
+  when: offline_mode | default(false)
+
+- name: Install Winlogbeat service from cache
+  win_shell: |
+    Set-Location C:\Windows\Temp\elk\winlogbeat\winlogbeat
+    .\install-service-winlogbeat.ps1
+  when: offline_mode | default(false)
+
+- name: Configure Winlogbeat
+  win_template:
+    src: winlogbeat.yml.j2
+    dest: C:\Windows\Temp\elk\winlogbeat\winlogbeat\winlogbeat.yml
+
+- name: Start Winlogbeat service
+  win_service:
+    name: winlogbeat
+    state: started
+    start_mode: auto

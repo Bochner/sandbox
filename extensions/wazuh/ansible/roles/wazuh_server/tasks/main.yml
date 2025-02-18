@@ -1,0 +1,49 @@
+---
+- name: Ensure Wazuh directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - /tmp/wazuh
+    - /etc/wazuh-indexer
+    - /etc/wazuh-dashboard
+    - /var/ossec
+
+- name: Copy Wazuh server components from cache when offline
+  copy:
+    src: "{{ playbook_dir }}/../cache/wazuh/server/{{ item }}"
+    dest: "/tmp/wazuh/{{ item }}"
+  with_items:
+    - "wazuh-manager_4.7.2-1_amd64.deb"
+    - "wazuh-indexer_4.7.2-1_amd64.deb"
+    - "wazuh-dashboard_4.7.2-1_amd64.deb"
+  when: offline_mode | default(false)
+
+- name: Install Wazuh server components from cache
+  apt:
+    deb: "/tmp/wazuh/{{ item }}"
+    state: present
+  with_items:
+    - "wazuh-manager_4.7.2-1_amd64.deb"
+    - "wazuh-indexer_4.7.2-1_amd64.deb"
+    - "wazuh-dashboard_4.7.2-1_amd64.deb"
+  when: offline_mode | default(false)
+
+- name: Configure Wazuh components
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+    - { src: "ossec.conf.j2", dest: "/var/ossec/etc/ossec.conf" }
+    - { src: "indexer.yml.j2", dest: "/etc/wazuh-indexer/indexer.yml" }
+    - { src: "dashboard.yml.j2", dest: "/etc/wazuh-dashboard/dashboard.yml" }
+
+- name: Start Wazuh services
+  systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  with_items:
+    - wazuh-manager
+    - wazuh-indexer 
+    - wazuh-dashboard

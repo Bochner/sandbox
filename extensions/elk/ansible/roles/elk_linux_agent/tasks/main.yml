@@ -1,0 +1,60 @@
+---
+- name: Ensure ELK agent directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - /tmp/elk
+    - /usr/share/filebeat
+    - /usr/share/metricbeat
+
+- name: Copy ELK Linux agents from cache when offline
+  copy:
+    src: "{{ playbook_dir }}/../cache/elk/linux-agent/{{ item.src }}"
+    dest: "/tmp/elk/{{ item.src }}"
+  with_items:
+    - { src: "filebeat-8.11.1-linux-x86_64.tar.gz" }
+    - { src: "metricbeat-8.11.1-linux-x86_64.tar.gz" }
+  when: offline_mode | default(false)
+
+- name: Extract ELK agents from cache
+  unarchive:
+    src: "/tmp/elk/{{ item.src }}"
+    dest: "{{ item.dest }}"
+    copy: no
+  with_items:
+    - { src: "filebeat-8.11.1-linux-x86_64.tar.gz", dest: "/usr/share/filebeat" }
+    - { src: "metricbeat-8.11.1-linux-x86_64.tar.gz", dest: "/usr/share/metricbeat" }
+  when: offline_mode | default(false)
+
+- name: Configure Filebeat
+  template:
+    src: filebeat.yml.j2
+    dest: /usr/share/filebeat/filebeat.yml
+
+- name: Configure Metricbeat
+  template:
+    src: metricbeat.yml.j2
+    dest: /usr/share/metricbeat/metricbeat.yml
+
+- name: Create systemd service files
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: 0644
+  with_items:
+    - { src: "filebeat.service.j2", dest: "/etc/systemd/system/filebeat.service" }
+    - { src: "metricbeat.service.j2", dest: "/etc/systemd/system/metricbeat.service" }
+
+- name: Reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: Start ELK agent services
+  systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  with_items:
+    - filebeat
+    - metricbeat

@@ -1,0 +1,35 @@
+---
+- name: Ensure Wazuh agent directories exist
+  win_file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - C:\Windows\Temp\wazuh
+    - C:\Program Files (x86)\ossec-agent
+
+- name: Copy Wazuh Windows agent from cache when offline
+  win_copy:
+    src: "{{ playbook_dir }}/../cache/wazuh/windows-agent/wazuh-agent-4.7.2-1.msi"
+    dest: C:\Windows\Temp\wazuh\wazuh-agent.msi
+  when: offline_mode | default(false)
+
+- name: Install Wazuh agent from cache
+  win_package:
+    path: C:\Windows\Temp\wazuh\wazuh-agent.msi
+    arguments: >
+      WAZUH_MANAGER="{{ wazuh_server_ip }}"
+      WAZUH_REGISTRATION_SERVER="{{ wazuh_server_ip }}"
+      WAZUH_AGENT_GROUP="{{ wazuh_agent_group | default('default') }}"
+    state: present
+  when: offline_mode | default(false)
+
+- name: Configure Wazuh agent
+  win_template:
+    src: ossec.conf.j2
+    dest: C:\Program Files (x86)\ossec-agent\ossec.conf
+
+- name: Start Wazuh agent service
+  win_service:
+    name: WazuhSvc
+    state: started
+    start_mode: auto

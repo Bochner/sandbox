@@ -1,0 +1,42 @@
+---
+- name: Ensure ELK prerequisite directories exist for server
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - /tmp/elk
+    - /usr/share/elasticsearch
+    - /usr/share/kibana
+    - /usr/share/logstash
+
+- name: Copy ELK server components from cache when offline
+  copy:
+    src: "{{ playbook_dir }}/../cache/elk/server/{{ item.src }}"
+    dest: "/tmp/elk/{{ item.src }}"
+  with_items:
+    - { src: "elasticsearch-8.11.1-linux-x86_64.tar.gz" }
+    - { src: "kibana-8.11.1-linux-x86_64.tar.gz" }
+    - { src: "logstash-8.11.1-linux-x86_64.tar.gz" }
+  when: offline_mode | default(false)
+
+- name: Extract ELK components from cache
+  unarchive:
+    src: "/tmp/elk/{{ item.src }}"
+    dest: "{{ item.dest }}"
+    copy: no
+  with_items:
+    - { src: "elasticsearch-8.11.1-linux-x86_64.tar.gz", dest: "/usr/share/elasticsearch" }
+    - { src: "kibana-8.11.1-linux-x86_64.tar.gz", dest: "/usr/share/kibana" }
+    - { src: "logstash-8.11.1-linux-x86_64.tar.gz", dest: "/usr/share/logstash" }
+  when: offline_mode | default(false)
+
+- name: Configure ELK components
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+    - { src: "elasticsearch.yml.j2", dest: "/usr/share/elasticsearch/config/elasticsearch.yml" }
+    - { src: "kibana.yml.j2", dest: "/usr/share/kibana/config/kibana.yml" }
+    - { src: "logstash.yml.j2", dest: "/usr/share/logstash/config/logstash.yml" }
+
+# ...rest of existing ELK server setup tasks...
